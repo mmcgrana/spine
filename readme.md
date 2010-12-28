@@ -92,7 +92,6 @@ You should see in your web logs:
     spine event=init url='redis://127.0.0.1:6379' queue='spine:queue'
     upcase of word redis requested
     spine event=enqueue fn='worker/upcase'
-    upcasing asynchronously
 
 And in your worker logs:
 
