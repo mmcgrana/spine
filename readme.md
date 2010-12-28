@@ -110,7 +110,7 @@ use for the Spine queue:
     (def sp (spine/init {:url "redis://password@redis.myapp.com:9000"
                          :queue "q:background"}))
 
-These default to `"redis://127.0.0.1:6379"` and "spine:queue" respectively.
+These default to `"redis://127.0.0.1:6379"` and `"spine:queue"` respectively.
 
 When working jobs, you can specify an error handler that will be invoked with
 the `Exception` instance
