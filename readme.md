@@ -11,21 +11,21 @@ Initialize the Spine client:
     
     (def sp (spine/init))
     
-Put jobs on the queue:
+Enqueue jobs:
 
-    (spine/enqueue sp #'call-later)
+    (spine/enqueue sp "call-later")
 
-    (spine/enqueue sp #'call-later-with-arg "arg")
+    (spine/enqueue sp "call-later-with-arg" "arg")
     
-Work jobs off the queue:
+Work jobs:
 
-    (spine/work sp)
+    (spine/work sp [#'call-later #'call-later-with-arg])
 
-Interrogate and manage the queue:
+Introspect and manage jobs:
 
-    (spine/depth sp)
+    (spine/depth sp "call-later")
 
-    (spine/clear sp)
+    (spine/clear sp "call-later")
 
 
 ## Example
@@ -38,7 +38,6 @@ Our `web` namespace in `src/web.clj` looks like:
     (ns web
       (:use compojure.core)
       (:use ring.adapter.jetty)
-      (:require worker)
       (:require [spine.client :as client]))
     
     (def sp (spine/init))
@@ -46,7 +45,7 @@ Our `web` namespace in `src/web.clj` looks like:
     (defroutes app
       (POST "/upcase" [word]
         (println "upcase of" word "requested")
-        (spine/enqueue sp #'worker/upcase word)
+        (spine/enqueue sp "upcase" word)
         "upcasing asynchronously\n"))
     
     (defn -main []
@@ -56,21 +55,23 @@ Then our `worker` namespace in `src/worker.clj` is:
 
     (ns worker
       (:require [spine.client :as spine]))
-     
+
+    (def sp (spine/init))
+
     (defn upcase [word]
       (println "the upcase of" word "is" (.toUpperCase word)))
     
     (defn -main []
-      (spine/work (spine/init)))
+      (spine/work sp [#'upcase]))
 
 Here is the `project.clj` that has the dependencies we need to run this:
 
-    (defproject spine-demo "0.0.1"
+    (defproject spine-demo "0.0.2"
       :dependencies
         [[org.clojure/clojure "1.3.0-alpha4"]
          [ring/ring-jetty-adapter "0.3.5"]
          [compojure "0.5.3"]
-         [spine "0.0.1"]])
+         [spine "0.0.2"]])
 
 After writing these files, run `lein deps` to install your dependencies.
 Then start three processes as follows:
@@ -89,33 +90,32 @@ The `curl` command should return:
 
 You should see in your web logs:
 
-    spine event=init url='redis://127.0.0.1:6379' queue='spine:queue'
+    spine event=init url='redis://127.0.0.1:6379'
     upcase of word redis requested
-    spine event=enqueue fn='worker/upcase'
+    spine event=enqueue queue='upcase'
 
 And in your worker logs:
 
-    spine event=init url='redis://127.0.0.1:6379' queue='spine:queue'
-    spine event=work
-    spine event=dequeue fn='worker/upcase'
+    spine event=init url='redis://127.0.0.1:6379'
+    spine event=work queues='upcase'
+    spine event=dequeue queue=upcase
     the upcase of redis is REDIS
-    spine event=complete fn='worker/upcase' elapsed=1
+    spine event=complete queue=upcase elapsed=1
 
 
 ## Options
 
-When initializing the client, you can specify the Redis URL and Redis key to
-use for the Spine queue:
+When initializing the client, you can specify the Redis URL:
 
-    (def sp (spine/init {:url "redis://password@redis.myapp.com:9000"
-                         :queue "q:background"}))
+    (def sp (spine/init {:url "redis://password@redis.myapp.com:9000"}))
 
-These default to `"redis://127.0.0.1:6379"` and `"spine:queue"` respectively.
+It defaults to `"redis://127.0.0.1:6379"`.
 
 When working jobs, you can specify an error handler that will be invoked with
 the `Exception` instance
 
-    (spine/work sp {:error (fn [e] (send-email (pr-str "it broke:" e)))})
+    (spine/work sp [#'job]
+      {:error (fn [e] (send-email (pr-str "it broke:" e)))})
 
 
 ## Installation
