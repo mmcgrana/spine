@@ -1,48 +1,51 @@
 (ns spine.client
-  (:require [clj-redis.client :as redis]))
+  (:require [clojure.string :as str])
+  (:require [clj-redis.client :as redis])
+  (:require [clj-stacktrace.repl :as st]))
 
-(defn- fn-serialize [fn-var]
-  (format "%s/%s" (.getName (.ns fn-var)) (.sym fn-var)))
+(defn log [line & args]
+  (apply printf line args)
+  (println))
 
-(defn- fn-deserialize [fn-str]
-  (resolve (symbol fn-str)))
-
-(defn init [& [{:keys [url queue]}]]
+(defn init [& [{:keys [url]}]]
   (let [url (or url "redis://127.0.0.1:6379")
-        queue (or queue "spine:queue")
+        prefix "spine:queue"
         db (redis/init {:url url})]
     (redis/ping db)
-    (printf "spine event=init url='%s' queue='%s'\n" url queue) (flush)
-    {:db db :queue queue}))
+    (log "spine event=init url='%s'" url)
+    {:db db :prefix prefix}))
 
-(defn enqueue [{:keys [db queue]} fn-var & [arg]]
-  (let [fn-str (fn-serialize fn-var)
-        payload (pr-str [fn-str arg])]
-    (printf "spine event=enqueue fn='%s'\n" fn-str) (flush)
-    (redis/lpush db queue payload)))
+(defn enqueue [{:keys [db prefix]} queue & [arg]]
+  (let [payload (pr-str arg)]
+    (log "spine event=enqueue queue=%s" queue)
+    (redis/lpush db (str prefix ":" queue) payload)))
 
-(defn depth [{:keys [db queue]}]
-  (redis/llen db queue))
+(defn depth [{:keys [db prefix]} queue]
+  (redis/llen db (str prefix ":" queue)))
 
-(defn clear [{:keys [db queue]}]
-  (redis/del db [queue]))
+(defn clear [{:keys [db prefix]} queue]
+  (redis/del db [(str prefix ":" queue)]))
 
-(defn work [{:keys [db queue]} & [{:keys [error]}]]
-  (printf "spine event=work\n") (flush)
-  (loop []
-    (when-let [[_ payload] (redis/brpop db [queue] 10)]
-      (try
-        (let [start (System/currentTimeMillis)
-              [fn-str arg] (read-string payload)
-              fn-val (fn-deserialize fn-str)]
-          (printf "spine event=dequeue fn='%s'\n" fn-str) (flush)
-          (if arg (fn-val arg) (fn-val))
-          (let [end (System/currentTimeMillis)
-                elapsed (- end start)]
-            (printf "spine event=complete fn='%s' elapsed=%d\n" fn-str elapsed) (flush)))
-        (catch Exception e
-          (println *err* "spine event=exception")
-          (.printStackTrace e)
-          (when error
-            (error e)))))
-   (recur)))
+(defn work [{:keys [db prefix]} queue-vars & [{:keys [error]}]]
+  (let [queue-map (reduce (fn [m v] (assoc m (name (.sym v)) v)) {} queue-vars)
+        queue-names (str/join "," (keys queue-map))
+        queue-keys (map #(str prefix ":" %) (keys queue-map))]
+    (log "spine event=work queues='%s'" queue-names)
+    (loop []
+      (when-let [[queue-key payload] (redis/brpop db queue-keys 10)]
+        (let [queue (last (str/split queue-key #":"))]
+          (try
+            (let [start (System/currentTimeMillis)
+                  arg (read-string payload)
+                  fn-val (queue-map queue)]
+              (log "spine event=dequeue queue=%s" queue)
+              (if arg (fn-val arg) (fn-val))
+              (let [end (System/currentTimeMillis)
+                    elapsed (- end start)]
+                (log "spine event=complete queue=%s elapsed=%d" queue elapsed)))
+            (catch Exception e
+              (.append *err* (format "spine event=exception queue=%s\n" queue))
+              (st/pst-on *err* false e)
+              (when error
+                (error e))))))
+      (recur))))
