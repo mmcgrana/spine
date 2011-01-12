@@ -105,7 +105,7 @@ And in your worker logs:
 
 ## Options
 
-When initializing the client, you can specify the Redis URL:
+When initializing the client, you can specify the Beanstalkd URL:
 
     (def sp (spine/init {:url "beanstalkd://queues.myapp.com:9000"}))
 
