@@ -118,6 +118,11 @@ the `Exception` instance
       {:error (fn [e] (send-email (pr-str "it broke:" e)))})
 
 
+## See also
+
+The companion project [Twine](https://github.com/mmcgrana/twine) provides a protocol-level interface to Beanstalkd that may be more appropriate for some applications.
+
+
 ## Installation
 
 Depend on `[spine "0.0.3"]` in your `project.clj`.
